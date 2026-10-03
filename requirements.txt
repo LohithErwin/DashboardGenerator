@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+psycopg2-binary
+asyncpg
+requests
+redis
+numpy
+sqlglot
+pydantic
+prometheus-client
+langchain
+langchain-core
+langchain-community
+langchain-ollama
+langgraph
+ollama

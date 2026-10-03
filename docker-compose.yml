@@ -1,0 +1,118 @@
+# docker-compose.yml
+# Starts PostgreSQL, Redis, Ollama, Prometheus, and Grafana
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  nl-pg-agent:
+    build: .
+    container_name: nl-pg-agent
+    ports:
+      - "5050:5050"
+      - "9877:9877"
+    environment:
+      - PG_HOST=localhost
+      - PG_PORT=5432
+      - PG_DB=postgres
+      - PG_USER=postgres
+      - PG_PASS=password
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/postgres
+      - REDIS_URL=redis://redis:6379/0
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_USER=admin
+      - GRAFANA_PASS=admin
+      - OLLAMA_MODEL=llama3
+      - OLLAMA_EMBED_MODEL=nomic-embed-text
+      - FASTAPI_PORT=5050
+      - EXPORTER_PORT=9877
+      - SCRAPE_INTERVAL=30
+      - MAX_RETRIES=3
+      - MAX_QUERY_COST=500000
+      - MAX_QUERY_ROWS=1000000
+      - DASHBOARD_SCORE_MIN=80
+      - MAX_REGEN_ATTEMPTS=2
+      - CACHE_TTL=3600
+      - PROMETHEUS_DS_NAME=Prometheus
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  grafana_data:

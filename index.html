@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NL → Postgres · Dashboard Agent v4.2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<style>
+/* ═══════════════════════════════════════════════════════════
+   RESET & TOKENS
+════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #080a0d;
+  --surface:    #0d1117;
+  --surface2:   #111620;
+  --border:     #1a2030;
+  --border2:    #243040;
+  --text:       #b8c4d4;
+  --text-hi:    #e2eaf5;
+  --muted:      #4a5568;
+  --muted2:     #364152;
+  --accent:     #00c8ff;
+  --accent-dim: rgba(0,200,255,0.12);
+  --accent2:    #00ffaa;
+  --accent2-dim:rgba(0,255,170,0.1);
+  --warn:       #ff5f40;
+  --warn-dim:   rgba(255,95,64,0.1);
+  --gold:       #ffd060;
+  --gold-dim:   rgba(255,208,96,0.1);
+  --purple:     #a78bfa;
+  --r:          5px;
+  --mono:       'JetBrains Mono', monospace;
+  --display:    'Syne', sans-serif;
+}
+
+html { font-size: 13px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* grid bg */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LAYOUT
+════════════════════════════════════════════════════════════ */
+.app {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 56px 1fr;
+  min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOP BAR
+════════════════════════════════════════════════════════════ */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 20px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  background: rgba(8,10,13,0.9);
+  backdrop-filter: blur(12px);
+  position: sticky; top: 0; z-index: 100;
+}
+
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none;
+}
+.brand-icon {
+  width: 30px; height: 30px;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  display: grid; place-items: center;
+  font-size: 14px; font-weight: 700; color: var(--accent);
+  box-shadow: 0 0 14px rgba(0,200,255,0.2), inset 0 0 8px rgba(0,200,255,0.05);
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%,100% { box-shadow: 0 0 14px rgba(0,200,255,0.2), inset 0 0 8px rgba(0,200,255,0.05); }
+  50%      { box-shadow: 0 0 22px rgba(0,200,255,0.35), inset 0 0 12px rgba(0,200,255,0.08); }
+}
+.brand-name {
+  font-family: var(--display);
+  font-size: 14px; font-weight: 700;
+  color: var(--text-hi); letter-spacing: 0.02em;
+}
+.brand-ver {
+  font-size: 9px; font-weight: 600;
+  background: var(--accent-dim); border: 1px solid rgba(0,200,255,0.25);
+  color: var(--accent); border-radius: 3px; padding: 2px 6px;
+  letter-spacing: 0.08em;
+}
+
+.topbar-pills {
+  display: flex; gap: 6px; margin-left: auto;
+}
+.pill {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 11px;
+  font-size: 10px; color: var(--muted);
+  transition: border-color .2s, color .2s;
+  cursor: default;
+}
+.pill.active  { border-color: rgba(0,200,255,0.3); color: var(--accent); }
+.pill.active .pill-dot  { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+.pill.warn    { border-color: rgba(255,95,64,0.3); color: var(--warn); }
+.pill.warn .pill-dot    { background: var(--warn); }
+.pill-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════
+   SIDEBAR
+════════════════════════════════════════════════════════════ */
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 24px 0;
+  overflow-y: auto;
+  height: calc(100vh - 56px);
+  position: sticky; top: 56px;
+}
+
+.sidebar-section { padding: 0 16px; margin-bottom: 28px; }
+.sidebar-heading {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--muted2);
+  padding: 0 8px; margin-bottom: 8px;
+}
+
+.nav-btn {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: none; border: none; border-radius: var(--r);
+  padding: 9px 12px; cursor: pointer;
+  color: var(--muted); font-family: var(--mono); font-size: 11px;
+  text-align: left;
+  transition: background .15s, color .15s;
+}
+.nav-btn:hover { background: var(--surface2); color: var(--text); }
+.nav-btn.active { background: var(--accent-dim); color: var(--accent); }
+.nav-icon { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 1px 7px; font-size: 9px; color: var(--muted);
+}
+.nav-btn.active .nav-badge { background: rgba(0,200,255,0.1); border-color: rgba(0,200,255,0.25); color: var(--accent); }
+
+/* quick stats in sidebar */
+.sidebar-stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  padding: 0 16px;
+}
+.s-stat {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 12px;
+}
+.s-stat .val { font-size: 18px; font-weight: 700; color: var(--text-hi); }
+.s-stat .lbl { font-size: 9px; color: var(--muted); margin-top: 2px; letter-spacing: 0.06em; }
+.s-stat.accent .val { color: var(--accent); }
+.s-stat.green  .val { color: var(--accent2); }
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN CONTENT
+════════════════════════════════════════════════════════════ */
+.main {
+  padding: 28px 32px 80px;
+  overflow-y: auto;
+  height: calc(100vh - 56px);
+}
+
+/* tab panels */
+.tab-panel { display: none; animation: fade-up .25s ease; }
+.tab-panel.active { display: block; }
+@keyframes fade-up { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+/* ═══════════════════════════════════════════════════════════
+   SECTION TITLES
+════════════════════════════════════════════════════════════ */
+.page-title {
+  font-family: var(--display);
+  font-size: 22px; font-weight: 700; color: var(--text-hi);
+  margin-bottom: 4px;
+}
+.page-sub { font-size: 11px; color: var(--muted); margin-bottom: 28px; }
+
+.sec-label {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 10px;
+}
+.sec-label em { color: var(--accent); font-style: normal; }
+
+/* ═══════════════════════════════════════════════════════════
+   QUERY INPUT
+════════════════════════════════════════════════════════════ */
+.query-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.input-row { display: flex; gap: 10px; }
+.nl-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 13px 16px;
+  font-family: var(--mono); font-size: 13px;
+  color: var(--text-hi);
+  outline: none;
+  caret-color: var(--accent);
+  transition: border-color .2s, box-shadow .2s;
+}
+.nl-input::placeholder { color: var(--muted2); }
+.nl-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,200,255,0.08);
+}
+
+.btn {
+  border: none; border-radius: var(--r);
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; transition: opacity .2s, transform .1s;
+  padding: 0 20px; white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover:not(:disabled) { opacity: .85; }
+.btn-primary:active:not(:disabled) { transform: scale(.97); }
+.btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+.btn-secondary {
+  background: transparent; color: var(--accent);
+  border: 1px solid rgba(0,200,255,0.35);
+  padding: 8px 16px;
+}
+.btn-secondary:hover { background: var(--accent-dim); }
+.btn-danger { background: transparent; color: var(--warn); border: 1px solid rgba(255,95,64,0.35); padding: 6px 12px; }
+.btn-danger:hover { background: var(--warn-dim); }
+
+/* chips */
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.chip {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 13px;
+  font-size: 11px; color: var(--muted); cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.chip:hover { border-color: rgba(0,200,255,0.4); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════
+   PROGRESS / LOG
+════════════════════════════════════════════════════════════ */
+.progress-box {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--r); overflow: hidden;
+  margin-bottom: 18px; display: none;
+}
+.progress-box.on { display: block; animation: fade-up .2s ease; }
+.progress-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border);
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+}
+.spinner {
+  width: 11px; height: 11px; flex-shrink: 0;
+  border: 1.5px solid var(--border2); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .65s linear infinite;
+}
+.spinner.done { border-top-color: var(--accent2); animation: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.log-lines { padding: 10px 16px; display: flex; flex-direction: column; gap: 5px; max-height: 160px; overflow-y: auto; }
+.log-line { display: flex; align-items: flex-start; gap: 10px; font-size: 11px; animation: fade-up .2s ease; }
+.log-ts { color: var(--muted2); flex-shrink: 0; }
+.log-line.ok   .log-msg { color: var(--accent2); }
+.log-line.info .log-msg { color: var(--text); }
+.log-line.err  .log-msg { color: var(--warn); }
+.log-line.dim  .log-msg { color: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════
+   ERROR BOX
+════════════════════════════════════════════════════════════ */
+.error-box {
+  background: var(--warn-dim); border: 1px solid rgba(255,95,64,0.3);
+  border-radius: var(--r); padding: 12px 16px;
+  font-size: 11px; color: var(--warn);
+  margin-bottom: 16px; display: none;
+}
+.error-box.on { display: block; animation: fade-up .2s ease; }
+
+/* ═══════════════════════════════════════════════════════════
+   RESULT CARD
+════════════════════════════════════════════════════════════ */
+.result-card {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 8px; overflow: hidden;
+  margin-bottom: 20px; display: none;
+}
+.result-card.on { display: block; animation: fade-up .3s ease; }
+
+.rc-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.rc-title {
+  font-family: var(--display); font-size: 15px; font-weight: 600;
+  color: var(--text-hi); flex: 1; min-width: 0;
+}
+.badge {
+  font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  border-radius: 4px; padding: 3px 9px;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+}
+.badge.accent { background: var(--accent-dim); border-color: rgba(0,200,255,0.3); color: var(--accent); }
+.badge.green  { background: var(--accent2-dim); border-color: rgba(0,255,170,0.3); color: var(--accent2); }
+.badge.gold   { background: var(--gold-dim); border-color: rgba(255,208,96,0.3); color: var(--gold); }
+.badge.warn   { background: var(--warn-dim); border-color: rgba(255,95,64,.3); color: var(--warn); }
+
+/* plan narrative bar (v4.2) */
+.narrative-bar {
+  display: none;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,200,255,0.04);
+  font-size: 11px; color: var(--muted);
+  gap: 8px; align-items: flex-start;
+}
+.narrative-bar.on { display: flex; }
+.narrative-bar strong { color: var(--accent); flex-shrink: 0; }
+
+.rc-body {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--border);
+}
+.rc-cell { background: var(--surface); padding: 16px 20px; }
+.rc-cell.full { grid-column: 1/-1; }
+.cell-lbl { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+
+.sql-pre {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 12px 14px;
+  font-size: 11px; color: var(--accent2);
+  white-space: pre-wrap; word-break: break-all;
+  max-height: 130px; overflow-y: auto; line-height: 1.7;
+}
+
+.metrics-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.metric-chip {
+  background: rgba(0,200,255,0.07); border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 4px; padding: 3px 9px;
+  font-size: 11px; color: var(--accent);
+}
+
+.kpi-row { display: flex; gap: 20px; flex-wrap: wrap; }
+.kpi { }
+.kpi .num { font-size: 22px; font-weight: 700; color: var(--text-hi); }
+.kpi .lbl { font-size: 9px; color: var(--muted); margin-top: 2px; letter-spacing: .06em; }
+
+/* plan confidence bar */
+.confidence-bar-wrap { margin-top: 10px; }
+.confidence-track {
+  width: 100%; height: 4px; background: var(--border);
+  border-radius: 2px; overflow: hidden;
+}
+.confidence-fill {
+  height: 100%; background: var(--accent2);
+  border-radius: 2px; transition: width .6s ease;
+}
+.confidence-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+/* plan details grid (v4.2) */
+.plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.plan-cell {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 12px;
+}
+.plan-cell .pk { font-size: 9px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 4px; }
+.plan-cell .pv { font-size: 12px; color: var(--text-hi); }
+
+.rc-actions { padding: 14px 20px; display: flex; gap: 10px; }
+.btn-grafana {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: transparent; border: 1px solid var(--accent);
+  color: var(--accent); border-radius: var(--r);
+  padding: 10px 20px; font-family: var(--mono);
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  cursor: pointer; text-decoration: none;
+  transition: background .2s, color .2s;
+}
+.btn-grafana:hover { background: var(--accent); color: #000; }
+.btn-grafana svg { width: 13px; height: 13px; }
+
+/* ═══════════════════════════════════════════════════════════
+   REGISTERED QUERIES LIST
+════════════════════════════════════════════════════════════ */
+.query-list { display: flex; flex-direction: column; gap: 9px; }
+.q-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 18px;
+  display: flex; align-items: center; gap: 14px;
+  transition: border-color .2s; cursor: default;
+  animation: fade-up .2s ease;
+}
+.q-item:hover { border-color: var(--border2); }
+.q-icon {
+  width: 34px; height: 34px; flex-shrink: 0;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--r); display: grid; place-items: center;
+  font-size: 15px;
+}
+.q-body { flex: 1; min-width: 0; }
+.q-title { font-size: 12px; font-weight: 600; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-sub   { font-size: 10px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-right { text-align: right; flex-shrink: 0; }
+.q-rows  { font-size: 14px; font-weight: 700; color: var(--accent2); }
+.q-time  { font-size: 9px; color: var(--muted); margin-top: 2px; }
+.q-badges { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; margin-top: 5px; }
+.q-open {
+  flex-shrink: 0; background: transparent;
+  border: 1px solid var(--border); color: var(--muted);
+  border-radius: 4px; padding: 5px 11px;
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+  cursor: pointer; text-decoration: none;
+  transition: border-color .2s, color .2s;
+}
+.q-open:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════
+   GENERIC TABLE
+════════════════════════════════════════════════════════════ */
+.data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.data-table th {
+  text-align: left; padding: 8px 14px;
+  border-bottom: 1px solid var(--border2);
+  font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); font-weight: 500;
+}
+.data-table td {
+  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--surface2); }
+
+/* ═══════════════════════════════════════════════════════════
+   VERSION HISTORY PANEL
+════════════════════════════════════════════════════════════ */
+.history-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 12px 16px;
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 8px;
+}
+.history-item .ver-num {
+  font-size: 20px; font-weight: 700; color: var(--muted2);
+  width: 40px; flex-shrink: 0; text-align: center;
+}
+.history-item.best .ver-num { color: var(--accent2); }
+.history-meta { flex: 1; }
+.history-meta .h-score { font-size: 14px; font-weight: 700; color: var(--text-hi); }
+.history-meta .h-time  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.history-meta .h-issues { font-size: 10px; color: var(--warn); margin-top: 3px; }
+
+/* ═══════════════════════════════════════════════════════════
+   KB PATTERNS
+════════════════════════════════════════════════════════════ */
+.kb-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 18px;
+  margin-bottom: 8px; display: flex; gap: 14px;
+  animation: fade-up .2s ease;
+}
+.kb-domain {
+  width: 60px; flex-shrink: 0;
+  font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  border-radius: 4px; padding: 5px 8px; text-align: center;
+  align-self: flex-start; margin-top: 2px;
+}
+.kb-domain.sales    { background: rgba(0,255,170,.1);  border: 1px solid rgba(0,255,170,.25); color: var(--accent2); }
+.kb-domain.finance  { background: rgba(0,255,170,.1);  border: 1px solid rgba(0,255,170,.25); color: var(--accent2); }
+.kb-domain.customer { background: rgba(0,200,255,.1);  border: 1px solid rgba(0,200,255,.25); color: var(--accent); }
+.kb-domain.monitoring{ background: rgba(255,95,64,.1); border: 1px solid rgba(255,95,64,.25); color: var(--warn); }
+.kb-domain.inventory { background: rgba(255,208,96,.1);border: 1px solid rgba(255,208,96,.25);color: var(--gold); }
+.kb-domain.operations{ background: rgba(167,139,250,.1);border: 1px solid rgba(167,139,250,.25);color: var(--purple); }
+
+.kb-body { flex: 1; min-width: 0; }
+.kb-req  { font-size: 12px; color: var(--text-hi); margin-bottom: 4px; }
+.kb-meta { font-size: 10px; color: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════
+   PLANNER PREVIEW
+════════════════════════════════════════════════════════════ */
+.planner-form { display: flex; gap: 10px; margin-bottom: 18px; align-items: flex-end; flex-wrap: wrap; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group label { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.form-group input, .form-group select {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: var(--r); padding: 10px 14px;
+  font-family: var(--mono); font-size: 12px; color: var(--text-hi);
+  outline: none; transition: border-color .2s;
+}
+.form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+.form-group input { width: 420px; }
+.form-group select { width: 160px; }
+
+.planner-result {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--r); display: none;
+}
+.planner-result.on { display: block; animation: fade-up .2s ease; }
+.planner-result-head {
+  padding: 12px 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.planner-result-body { padding: 16px 18px; }
+.pr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.pr-cell {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 12px 14px;
+}
+.pr-cell .pk { font-size: 9px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 5px; }
+.pr-cell .pv { font-size: 12px; color: var(--text-hi); }
+.pr-cell.full { grid-column: 1/-1; }
+.reason-text { font-size: 11px; color: var(--text); line-height: 1.65; }
+
+/* ═══════════════════════════════════════════════════════════
+   SCHEMA VIEWER
+════════════════════════════════════════════════════════════ */
+.schema-pre {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px 20px;
+  font-size: 11px; color: var(--accent2); line-height: 1.8;
+  white-space: pre; overflow-x: auto;
+  max-height: 500px; overflow-y: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   EMPTY + LOADING STATES
+════════════════════════════════════════════════════════════ */
+.empty {
+  padding: 48px 0; text-align: center;
+  font-size: 11px; color: var(--muted2); letter-spacing: .05em;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: var(--r); height: 14px; margin-bottom: 6px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLLBAR
+════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══════════════════════════════════════════
+     TOP BAR
+════════════════════════════════════════════ -->
+<header class="topbar">
+  <a class="brand" href="#">
+    <div class="brand-icon">Ψ</div>
+    <span class="brand-name">NL → PG Agent</span>
+    <span class="brand-ver">v4.2</span>
+  </a>
+  <div class="topbar-pills">
+    <div class="pill" id="pill-api"><span class="pill-dot"></span><span id="pill-api-label">API…</span></div>
+    <div class="pill" id="pill-db"><span class="pill-dot"></span><span id="pill-db-label">DB…</span></div>
+    <div class="pill" id="pill-cache"><span class="pill-dot"></span><span id="pill-cache-label">Cache…</span></div>
+    <div class="pill" id="pill-embed"><span class="pill-dot"></span><span id="pill-embed-label">Embeddings…</span></div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════
+     SIDEBAR
+════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-section">
+    <div class="sidebar-heading">Dashboard</div>
+    <button class="nav-btn active" data-tab="query">
+      <span class="nav-icon">⌗</span> New Query
+    </button>
+    <button class="nav-btn" data-tab="queries">
+      <span class="nav-icon">≡</span> Registered Queries
+      <span class="nav-badge" id="nav-q-count">0</span>
+    </button>
+    <button class="nav-btn" data-tab="planner">
+      <span class="nav-icon">◈</span> Planner Preview
+    </button>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-heading">Insights</div>
+    <button class="nav-btn" data-tab="kb">
+      <span class="nav-icon">◉</span> Knowledge Base
+      <span class="nav-badge" id="nav-kb-count">0</span>
+    </button>
+    <button class="nav-btn" data-tab="schema">
+      <span class="nav-icon">⊟</span> Schema
+    </button>
+    <button class="nav-btn" data-tab="health">
+      <span class="nav-icon">♥</span> Health
+    </button>
+  </div>
+
+  <div style="padding: 0 16px; margin-bottom: 8px;">
+    <div class="sidebar-heading">Live Stats</div>
+  </div>
+  <div class="sidebar-stats">
+    <div class="s-stat accent"><div class="val" id="ss-queries">—</div><div class="lbl">Queries</div></div>
+    <div class="s-stat green"><div class="val" id="ss-kb">—</div><div class="lbl">KB patterns</div></div>
+    <div class="s-stat"><div class="val" id="ss-scrape">—s</div><div class="lbl">Scrape</div></div>
+    <div class="s-stat"><div class="val" id="ss-model">—</div><div class="lbl">Model</div></div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════
+     MAIN
+════════════════════════════════════════════ -->
+<main class="main">
+
+  <!-- ────────────────── TAB: NEW QUERY ───────────────── -->
+  <div class="tab-panel active" id="tab-query">
+    <div class="page-title">Ask a Question</div>
+    <div class="page-sub">Describe what you want to see — the agent generates SQL, publishes metrics & builds a Grafana dashboard.</div>
+
+    <div class="query-box">
+      <div class="sec-label"><em>01</em> — Natural language query</div>
+      <div class="input-row">
+        <input id="nl-input" class="nl-input" type="text"
+          placeholder="e.g. Show total sales revenue grouped by product category"
+          autocomplete="off" spellcheck="false" />
+        <button id="btn-run" class="btn btn-primary">Run →</button>
+      </div>
+      <div class="chips">
+        <span class="chip" data-q="Show total count of rows per table in the public schema">Rows per table</span>
+        <span class="chip" data-q="Show me the top 10 tables by estimated row count">Top 10 tables</span>
+        <span class="chip" data-q="Count all users grouped by created month">Users by month</span>
+        <span class="chip" data-q="Show average order value per customer segment">Avg order value</span>
+        <span class="chip" data-q="Show products with lowest stock quantity, top 20">Low stock</span>
+        <span class="chip" data-q="Show revenue trend over the last 12 months">Revenue trend</span>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-box" id="progress-box">
+      <div class="progress-head">
+        <div class="spinner" id="spinner"></div>
+        <span id="progress-label">Processing…</span>
+      </div>
+      <div class="log-lines" id="log-lines"></div>
+    </div>
+
+    <!-- Error -->
+    <div class="error-box" id="error-box"></div>
+
+    <!-- Result -->
+    <div class="result-card" id="result-card">
+      <div class="rc-head">
+        <div class="rc-title" id="rc-title">—</div>
+        <span class="badge" id="rc-domain-badge">—</span>
+        <span class="badge accent" id="rc-panel-badge">—</span>
+        <span class="badge green" id="rc-rows-badge">—</span>
+        <span class="badge gold" id="rc-score-badge">—</span>
+      </div>
+
+      <!-- v4.2: narrative bar -->
+      <div class="narrative-bar" id="narrative-bar">
+        <strong>Story:</strong>
+        <span id="narrative-text"></span>
+      </div>
+
+      <div class="rc-body">
+        <!-- SQL -->
+        <div class="rc-cell full">
+          <div class="cell-lbl">Generated SQL</div>
+          <pre class="sql-pre" id="rc-sql"></pre>
+        </div>
+
+        <!-- Metrics -->
+        <div class="rc-cell">
+          <div class="cell-lbl">Prometheus Metrics</div>
+          <div class="metrics-wrap" id="rc-metrics"></div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="rc-cell">
+          <div class="cell-lbl">Run Stats</div>
+          <div class="kpi-row">
+            <div class="kpi"><div class="num" id="rc-rows">—</div><div class="lbl">rows fetched</div></div>
+            <div class="kpi"><div class="num" id="rc-cost">—</div><div class="lbl">est. cost</div></div>
+            <div class="kpi"><div class="num" id="rc-version">—</div><div class="lbl">version</div></div>
+            <div class="kpi"><div class="num" id="rc-topn">—</div><div class="lbl">top-N</div></div>
+          </div>
+        </div>
+
+        <!-- v4.2 planner confidence -->
+        <div class="rc-cell full">
+          <div class="cell-lbl">Planner Confidence</div>
+          <div class="confidence-bar-wrap">
+            <div class="confidence-track"><div class="confidence-fill" id="confidence-fill" style="width:0%"></div></div>
+            <div class="confidence-label" id="confidence-label">—</div>
+          </div>
+        </div>
+
+        <!-- v4.2 dashboard plan details -->
+        <div class="rc-cell full">
+          <div class="cell-lbl">Dashboard Plan (v4.2)</div>
+          <div class="plan-grid" id="plan-grid"></div>
+        </div>
+
+        <!-- Secondary panels & tags -->
+        <div class="rc-cell">
+          <div class="cell-lbl">Secondary Panels</div>
+          <div class="metrics-wrap" id="rc-secondary"></div>
+        </div>
+        <div class="rc-cell">
+          <div class="cell-lbl">Tags</div>
+          <div class="metrics-wrap" id="rc-tags"></div>
+        </div>
+      </div>
+
+      <div class="rc-actions">
+        <a class="btn-grafana" id="rc-link" href="#" target="_blank">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          Open in Grafana
+        </a>
+        <button class="btn btn-secondary" id="btn-view-history" style="display:none">
+          View Version History
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────────── TAB: REGISTERED QUERIES ──── -->
+  <div class="tab-panel" id="tab-queries">
+    <div class="page-title">Registered Queries</div>
+    <div class="page-sub">All active queries being scraped and exposed to Prometheus.</div>
+    <div id="queries-list" class="query-list">
+      <div class="empty">No queries registered yet.</div>
+    </div>
+  </div>
+
+  <!-- ────────────────── TAB: PLANNER PREVIEW ─────── -->
+  <div class="tab-panel" id="tab-planner">
+    <div class="page-title">Planner Preview</div>
+    <div class="page-sub">Test the DashboardPlannerAgent (v4.2) — see what layout it recommends without running a full registration.</div>
+
+    <div class="planner-form">
+      <div class="form-group">
+        <label>Business question</label>
+        <input id="planner-q" type="text" placeholder="e.g. Show revenue trend by region" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Domain</label>
+        <select id="planner-domain">
+          <option value="sales">sales</option>
+          <option value="finance">finance</option>
+          <option value="inventory">inventory</option>
+          <option value="monitoring">monitoring</option>
+          <option value="customer">customer</option>
+          <option value="operations">operations</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-planner" style="height:42px">Preview →</button>
+    </div>
+
+    <div class="planner-result" id="planner-result">
+      <div class="planner-result-head">
+        <span class="badge accent" id="pr-panel-type">—</span>
+        <span class="badge" id="pr-title-badge">—</span>
+        <span class="badge gold" id="pr-confidence-badge">—</span>
+        <span style="margin-left:auto; font-size:10px; color:var(--muted)" id="pr-domain-label">—</span>
+      </div>
+      <div class="planner-result-body">
+        <div class="pr-grid" id="pr-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────────── TAB: KNOWLEDGE BASE ──────── -->
+  <div class="tab-panel" id="tab-kb">
+    <div class="page-title">Knowledge Base (RAG)</div>
+    <div class="page-sub">Proven dashboard patterns stored for reuse. Only patterns scoring ≥ DASHBOARD_SCORE_MIN are saved.</div>
+    <div id="kb-list"><div class="empty">No patterns stored yet.</div></div>
+  </div>
+
+  <!-- ────────────────── TAB: SCHEMA ──────────────── -->
+  <div class="tab-panel" id="tab-schema">
+    <div class="page-title">Database Schema</div>
+    <div class="page-sub">Live schema fetched from <code>information_schema.columns</code>.</div>
+    <div style="display:flex; gap:10px; margin-bottom:16px;">
+      <button class="btn btn-secondary" id="btn-refresh-schema">↺ Refresh Schema</button>
+    </div>
+    <pre class="schema-pre" id="schema-pre">Loading…</pre>
+  </div>
+
+  <!-- ────────────────── TAB: HEALTH ──────────────── -->
+  <div class="tab-panel" id="tab-health">
+    <div class="page-title">System Health</div>
+    <div class="page-sub">Live status from <code>/api/health</code> and <code>/api/cache/stats</code>.</div>
+    <div id="health-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:24px;"></div>
+
+    <div class="sec-label" style="margin-top:24px;">Cache Stats</div>
+    <div id="cache-stats-grid" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;"></div>
+  </div>
+
+</main>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     VERSION HISTORY MODAL
+════════════════════════════════════════════ -->
+<div id="modal-overlay" style="
+  display:none; position:fixed; inset:0; z-index:200;
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
+  align-items: center; justify-content: center;
+">
+  <div style="
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 10px; width: 560px; max-height: 80vh;
+    overflow-y: auto; padding: 24px;
+    animation: fade-up .25s ease;
+  ">
+    <div style="display:flex; align-items:center; margin-bottom:20px;">
+      <span style="font-family:var(--display); font-size:16px; font-weight:700; color:var(--text-hi);">Version History</span>
+      <span style="margin-left:8px; font-size:11px; color:var(--muted)" id="modal-uid-label"></span>
+      <button onclick="closeModal()" style="
+        margin-left:auto; background:none; border:none; color:var(--muted);
+        font-size:18px; cursor:pointer; line-height:1;
+      ">✕</button>
+    </div>
+    <div id="modal-history-content"></div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════
+   CONFIG
+════════════════════════════════════════════ */
+const API = 'http://localhost:5050';
+let scrapeInterval = 30;
+let currentUid     = null;  // uid of last registered query
+
+/* ════════════════════════════════════════════
+   TABS
+════════════════════════════════════════════ */
+document.querySelectorAll('.nav-btn[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'queries') loadQueries();
+    if (btn.dataset.tab === 'kb')      loadKb();
+    if (btn.dataset.tab === 'schema')  loadSchema();
+    if (btn.dataset.tab === 'health')  loadHealth();
+  });
+});
+
+/* ════════════════════════════════════════════
+   HEALTH CHECK
+════════════════════════════════════════════ */
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/api/health`);
+    const d = await r.json();
+    scrapeInterval = d.scrape_interval || 30;
+
+    setFill('pill-api', 'active', d.version ? `v${d.version}` : 'API OK', 'pill-api-label');
+    setFill('pill-db',  d.async_db ? 'active' : '', d.async_db ? 'Async DB' : 'Sync DB', 'pill-db-label');
+
+    const cacheOk = d.cache_backend === 'redis';
+    setFill('pill-cache', cacheOk ? 'active' : '', cacheOk ? 'Redis' : 'No cache', 'pill-cache-label');
+    setFill('pill-embed', d.domain_embeddings > 0 ? 'active' : 'warn',
+      d.domain_embeddings > 0 ? `${d.domain_embeddings} Domains` : 'No Embeds', 'pill-embed-label');
+
+    document.getElementById('ss-queries').textContent = d.kb_patterns !== undefined ? '—' : '—';
+    document.getElementById('ss-kb').textContent = d.kb_patterns ?? '—';
+    document.getElementById('ss-scrape').textContent = `${d.scrape_interval}s`;
+    document.getElementById('ss-model').textContent = (d.ollama_model || '—').slice(0, 7);
+  } catch {
+    setFill('pill-api', 'warn', 'Offline', 'pill-api-label');
+  }
+}
+
+function setFill(pillId, cls, label, labelId) {
+  const el = document.getElementById(pillId);
+  el.className = 'pill' + (cls ? ' ' + cls : '');
+  document.getElementById(labelId).textContent = label;
+}
+
+/* ════════════════════════════════════════════
+   SIDEBAR LIVE COUNTS
+════════════════════════════════════════════ */
+async function refreshSidebarCounts() {
+  try {
+    const [qr, kbr] = await Promise.all([
+      fetch(`${API}/api/queries`).then(r => r.json()),
+      fetch(`${API}/api/kb/patterns`).then(r => r.json()),
+    ]);
+    document.getElementById('nav-q-count').textContent  = qr.length || 0;
+    document.getElementById('nav-kb-count').textContent = kbr.length || 0;
+    document.getElementById('ss-queries').textContent   = qr.length || 0;
+    document.getElementById('ss-kb').textContent        = kbr.length || 0;
+  } catch {}
+}
+
+/* ════════════════════════════════════════════
+   LOGGING
+════════════════════════════════════════════ */
+function addLog(msg, type = 'info') {
+  const box = document.getElementById('log-lines');
+  const ts  = new Date().toLocaleTimeString('en-US', { hour12: false });
+  const row = document.createElement('div');
+  row.className = 'log-line ' + type;
+  row.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg">${msg}</span>`;
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+function clearLogs() { document.getElementById('log-lines').innerHTML = ''; }
+
+/* ════════════════════════════════════════════
+   RUN QUERY
+════════════════════════════════════════════ */
+const PANEL_ICONS = {
+  timeseries:'📈', barchart:'📊', piechart:'🥧',
+  stat:'🔢', bargauge:'⟶', table:'⊞',
+  gauge:'⊙', histogram:'▦', heatmap:'▤',
+};
+
+document.getElementById('btn-run').addEventListener('click', runQuery);
+document.getElementById('nl-input').addEventListener('keydown', e => { if (e.key === 'Enter') runQuery(); });
+document.querySelectorAll('.chip[data-q]').forEach(c => {
+  c.addEventListener('click', () => {
+    document.getElementById('nl-input').value = c.dataset.q;
+    document.getElementById('nl-input').focus();
+  });
+});
+
+async function runQuery() {
+  const q = document.getElementById('nl-input').value.trim();
+  if (!q) return;
+
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+
+  // Reset
+  document.getElementById('error-box').classList.remove('on');
+  document.getElementById('result-card').classList.remove('on');
+  document.getElementById('btn-view-history').style.display = 'none';
+  clearLogs();
+
+  document.getElementById('progress-box').classList.add('on');
+  document.getElementById('progress-label').textContent = 'Processing…';
+  const sp = document.getElementById('spinner');
+  sp.className = 'spinner';
+
+  addLog(`Query: "${q}"`, 'info');
+
+  const steps = [
+    [700,  'Fetching schema from information_schema…'],
+    [1600, 'Running multi-agent SQL pipeline…'],
+    [2800, 'Security & cost guard…'],
+    [3600, 'Executing query on Postgres…'],
+    [4200, 'Dashboard planning agent (v4.2)…'],
+    [4900, 'Batched LLM enrichment…'],
+    [5600, 'Publishing Prometheus metrics…'],
+    [6000, 'Pushing to Grafana…'],
+  ];
+  const timers = steps.map(([ms, msg]) => setTimeout(() => addLog(msg, 'dim'), ms));
+
+  try {
+    const resp = await fetch(`${API}/api/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q }),
+    });
+    timers.forEach(clearTimeout);
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+
+    const d = await resp.json();
+
+    // Log success
+    addLog(`Domain: ${d.domain}`, 'ok');
+    addLog(`SQL generated (${(d.sql || '').split('\n').length} lines)`, 'ok');
+    addLog(`${d.row_count} rows · Est. cost ${Math.round(d.cost_estimate || 0)}`, 'ok');
+    addLog(`Panel type: ${d.panel_type} · Score: ${d.dashboard_score}/100`, 'ok');
+    if (d.dashboard_plan?.confidence < 0.4) addLog('Planner used heuristic fallback.', 'dim');
+    addLog('Grafana dashboard ready ✓', 'ok');
+
+    sp.className = 'spinner done';
+    document.getElementById('progress-label').textContent = 'Done';
+
+    // Populate result card
+    document.getElementById('rc-title').textContent       = d.title;
+    document.getElementById('rc-domain-badge').textContent= d.domain || '—';
+    document.getElementById('rc-panel-badge').textContent = d.panel_type;
+    document.getElementById('rc-rows-badge').textContent  = `${d.row_count} rows`;
+    document.getElementById('rc-score-badge').textContent = `Score ${d.dashboard_score}/100`;
+    document.getElementById('rc-sql').textContent         = d.sql;
+    document.getElementById('rc-rows').textContent        = d.row_count;
+    document.getElementById('rc-cost').textContent        = Math.round(d.cost_estimate || 0);
+    document.getElementById('rc-version').textContent     = `v${d.current_version}`;
+    document.getElementById('rc-topn').textContent        = d.dashboard_plan?.top_n || '—';
+
+    // Confidence bar (v4.2)
+    const conf = (d.dashboard_plan?.confidence ?? 1) * 100;
+    document.getElementById('confidence-fill').style.width  = conf + '%';
+    document.getElementById('confidence-fill').style.background = conf < 40 ? 'var(--warn)' : 'var(--accent2)';
+    document.getElementById('confidence-label').textContent =
+      `${conf.toFixed(0)}% — ${conf < 40 ? 'heuristic fallback' : 'LLM confident'}`;
+
+    // Narrative (v4.2)
+    const narBar = document.getElementById('narrative-bar');
+    if (d.dashboard_plan?.narrative) {
+      document.getElementById('narrative-text').textContent = d.dashboard_plan.narrative;
+      narBar.classList.add('on');
+    } else {
+      narBar.classList.remove('on');
+    }
+
+    // Plan grid (v4.2)
+    const planCells = [
+      { k: 'Panel Type',    v: d.panel_type },
+      { k: 'Color Scheme',  v: d.color_scheme },
+      { k: 'Unit',          v: d.suggested_unit },
+      { k: 'Top-N Filter',  v: d.dashboard_plan?.top_n || 'none' },
+      { k: 'Has Datetime',  v: d.has_datetime ? `Yes (${(d.datetime_cols||[]).join(', ')})` : 'No' },
+      { k: 'Version',       v: `v${d.current_version}` },
+    ];
+    document.getElementById('plan-grid').innerHTML = planCells.map(c =>
+      `<div class="plan-cell"><div class="pk">${c.k}</div><div class="pv">${c.v}</div></div>`
+    ).join('');
+
+    // Metrics chips
+    const ml = document.getElementById('rc-metrics');
+    ml.innerHTML = (d.metrics || []).map(m => `<span class="metric-chip">${m}</span>`).join('');
+
+    // Secondary panels
+    document.getElementById('rc-secondary').innerHTML =
+      (d.secondary_panels || []).map(p => `<span class="metric-chip">${p}</span>`).join('');
+
+    // Tags
+    document.getElementById('rc-tags').innerHTML =
+      (d.tags || []).map(t => `<span class="badge" style="font-size:10px">${t}</span>`).join('');
+
+    // Grafana link
+    document.getElementById('rc-link').href = d.grafana_url;
+
+    // Version history button
+    currentUid = d.grafana_uid || `nl-pg-${d.query_id}`;
+    document.getElementById('btn-view-history').style.display = 'inline-flex';
+
+    document.getElementById('result-card').classList.add('on');
+    refreshSidebarCounts();
+
+  } catch (err) {
+    timers.forEach(clearTimeout);
+    addLog(`Error: ${err.message}`, 'err');
+    sp.className = 'spinner done';
+    document.getElementById('progress-label').textContent = 'Failed';
+    const eb = document.getElementById('error-box');
+    eb.textContent = `⚠ ${err.message}`;
+    eb.classList.add('on');
+  }
+  btn.disabled = false;
+}
+
+/* ════════════════════════════════════════════
+   VERSION HISTORY MODAL
+════════════════════════════════════════════ */
+document.getElementById('btn-view-history').addEventListener('click', () => openModal(currentUid));
+
+function openModal(uid) {
+  document.getElementById('modal-uid-label').textContent = uid || '';
+  document.getElementById('modal-history-content').innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('modal-overlay').style.display = 'flex';
+  loadVersionHistory(uid);
+}
+function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+async function loadVersionHistory(uid) {
+  try {
+    const r = await fetch(`${API}/api/dashboard/${encodeURIComponent(uid)}/history`);
+    const hist = await r.json();
+    const el = document.getElementById('modal-history-content');
+    if (!hist.length) { el.innerHTML = '<div class="empty">No versions found.</div>'; return; }
+    const best = Math.max(...hist.map(v => v.score));
+    el.innerHTML = hist.slice().reverse().map(v => `
+      <div class="history-item ${v.score === best ? 'best' : ''}">
+        <div class="ver-num">v${v.version}</div>
+        <div class="history-meta">
+          <div class="h-score">${v.score}/100</div>
+          <div class="h-time">${v.created_at}</div>
+          ${v.issues && v.issues.length ? `<div class="h-issues">⚠ ${v.issues.slice(0,2).join(' · ')}</div>` : ''}
+        </div>
+        <button class="btn btn-danger"
+          onclick="rollback('${uid}', ${v.version})"
+          ${v.version === hist[hist.length-1].version ? 'disabled title="Current version"' : ''}>
+          Rollback
+        </button>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('modal-history-content').innerHTML = `<div class="empty" style="color:var(--warn)">Error: ${e.message}</div>`;
+  }
+}
+
+async function rollback(uid, version) {
+  if (!confirm(`Rollback dashboard "${uid}" to version ${version}?`)) return;
+  try {
+    const r = await fetch(`${API}/api/dashboard/${encodeURIComponent(uid)}/rollback/${version}`, { method: 'POST' });
+    if (!r.ok) throw new Error((await r.json()).detail);
+    alert(`Rolled back to v${version} ✓`);
+    closeModal();
+  } catch (e) {
+    alert(`Rollback failed: ${e.message}`);
+  }
+}
+
+/* ════════════════════════════════════════════
+   REGISTERED QUERIES TAB
+════════════════════════════════════════════ */
+async function loadQueries() {
+  const el = document.getElementById('queries-list');
+  el.innerHTML = '<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>';
+  try {
+    const r = await fetch(`${API}/api/queries`);
+    const qs = await r.json();
+    if (!qs.length) { el.innerHTML = '<div class="empty">No queries registered yet.</div>'; return; }
+    el.innerHTML = qs.slice().reverse().map(q => {
+      const icon = PANEL_ICONS[q.panel_type] || '⊞';
+      const confPct = Math.round((q.plan_confidence || 1) * 100);
+      const ts = (q.created_at || '').replace('T', ' ');
+      return `
+        <div class="q-item">
+          <div class="q-icon">${icon}</div>
+          <div class="q-body">
+            <div class="q-title">${q.title}</div>
+            <div class="q-sub">${q.user_request}</div>
+            <div class="q-badges" style="margin-top:6px">
+              <span class="badge" style="font-size:9px">${q.domain}</span>
+              <span class="badge accent" style="font-size:9px">${q.panel_type}</span>
+              <span class="badge" style="font-size:9px">v${q.current_version}</span>
+              <span class="badge ${q.dashboard_score >= 80 ? 'green' : 'warn'}" style="font-size:9px">${q.dashboard_score}/100</span>
+              <span class="badge" style="font-size:9px">conf ${confPct}%</span>
+              ${q.plan_narrative ? `<span class="badge" style="font-size:9px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${q.plan_narrative}">📖 ${q.plan_narrative.slice(0,40)}…</span>` : ''}
+            </div>
+          </div>
+          <div class="q-right">
+            <div class="q-rows">${q.row_count}</div>
+            <div style="font-size:9px;color:var(--muted);margin-top:2px">rows</div>
+            <div class="q-time" style="margin-top:4px">${ts}</div>
+          </div>
+          <a class="q-open" href="${q.grafana_url}" target="_blank">Open ↗</a>
+          <button class="btn btn-secondary" style="height:32px;font-size:10px;padding:0 12px"
+            onclick="openModal('${q.grafana_uid || 'nl-pg-' + q.query_id}')">History</button>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty" style="color:var(--warn)">Error: ${e.message}</div>`;
+  }
+}
+
+/* ════════════════════════════════════════════
+   PLANNER PREVIEW TAB (v4.2)
+════════════════════════════════════════════ */
+document.getElementById('btn-planner').addEventListener('click', runPlannerPreview);
+document.getElementById('planner-q').addEventListener('keydown', e => { if (e.key === 'Enter') runPlannerPreview(); });
+
+async function runPlannerPreview() {
+  const q      = document.getElementById('planner-q').value.trim();
+  const domain = document.getElementById('planner-domain').value;
+  if (!q) return;
+
+  const btn = document.getElementById('btn-planner');
+  btn.disabled = true; btn.textContent = '…';
+
+  const res = document.getElementById('planner-result');
+  res.classList.remove('on');
+
+  try {
+    const r = await fetch(`${API}/api/planner/preview?q=${encodeURIComponent(q)}&domain=${domain}`);
+    if (!r.ok) throw new Error((await r.json()).detail);
+    const d = await r.json();
+
+    document.getElementById('pr-panel-type').textContent     = d.primary_panel_type;
+    document.getElementById('pr-title-badge').textContent    = d.primary_panel_title || '—';
+    const confPct = Math.round((d.confidence || 0) * 100);
+    document.getElementById('pr-confidence-badge').textContent = `Confidence ${confPct}%`;
+    document.getElementById('pr-domain-label').textContent   = `Domain: ${domain}`;
+
+    const cells = [
+      { k: 'Primary Panel',    v: d.primary_panel_type },
+      { k: 'Color Scheme',     v: d.color_scheme },
+      { k: 'Suggested Unit',   v: d.suggested_unit },
+      { k: 'Thresholds',       v: d.thresholds_strategy },
+      { k: 'Show Timeseries',  v: d.show_timeseries ? 'Yes' : 'No' },
+      { k: 'Highlight Top-N',  v: d.highlight_top_n || 'None' },
+      { k: 'Secondary Panels', v: (d.secondary_panels || []).join(', ') },
+      { k: 'Secondary Titles', v: (d.secondary_titles || []).filter(Boolean).join(' / ') || '—' },
+      { k: 'Narrative Focus',  v: d.narrative_focus || '—', full: true },
+      { k: 'Plan Reason',      v: d.primary_panel_reason || '—', full: true },
+    ];
+
+    document.getElementById('pr-grid').innerHTML = cells.map(c =>
+      `<div class="pr-cell ${c.full ? 'full' : ''}">
+         <div class="pk">${c.k}</div>
+         <div class="pv ${c.full ? 'reason-text' : ''}">${c.v}</div>
+       </div>`
+    ).join('');
+
+    res.classList.add('on');
+  } catch (e) {
+    alert(`Planner error: ${e.message}`);
+  }
+  btn.disabled = false; btn.textContent = 'Preview →';
+}
+
+/* ════════════════════════════════════════════
+   KB PATTERNS TAB
+════════════════════════════════════════════ */
+async function loadKb() {
+  const el = document.getElementById('kb-list');
+  el.innerHTML = '<div class="skeleton"></div>';
+  try {
+    const r = await fetch(`${API}/api/kb/patterns`);
+    const ps = await r.json();
+    if (!ps.length) { el.innerHTML = '<div class="empty">No patterns stored yet.</div>'; return; }
+    el.innerHTML = ps.slice().reverse().map(p => `
+      <div class="kb-card">
+        <div class="kb-domain ${p.domain}">${p.domain}</div>
+        <div class="kb-body">
+          <div class="kb-req">${p.user_request}</div>
+          <div class="kb-meta">
+            Panel: <strong>${p.panel_type}</strong> ·
+            Secondary: ${(p.secondary_panels || []).join(', ')} ·
+            Score: <span style="color:var(--accent2)">${p.score}/100</span> ·
+            Stored: ${p.created_at}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty" style="color:var(--warn)">Error: ${e.message}</div>`;
+  }
+}
+
+/* ════════════════════════════════════════════
+   SCHEMA TAB
+════════════════════════════════════════════ */
+async function loadSchema() {
+  const el = document.getElementById('schema-pre');
+  el.textContent = 'Loading…';
+  try {
+    const r = await fetch(`${API}/api/schema`);
+    const d = await r.json();
+    el.textContent = d.schema || '(no schema)';
+  } catch (e) {
+    el.textContent = `Error: ${e.message}`;
+  }
+}
+document.getElementById('btn-refresh-schema').addEventListener('click', loadSchema);
+
+/* ════════════════════════════════════════════
+   HEALTH TAB
+════════════════════════════════════════════ */
+async function loadHealth() {
+  try {
+    const [hr, cr] = await Promise.all([
+      fetch(`${API}/api/health`).then(r => r.json()),
+      fetch(`${API}/api/cache/stats`).then(r => r.json()),
+    ]);
+
+    const healthFields = [
+      ['Version',          hr.version],
+      ['Ollama Model',     hr.ollama_model],
+      ['Embed Model',      hr.ollama_embed_model],
+      ['Async DB',         hr.async_db ? '✓ asyncpg' : '✗ psycopg2 fallback'],
+      ['Max Retries',      hr.max_retries],
+      ['Exporter Port',    `:${hr.exporter_port}`],
+      ['Scrape Interval',  `${hr.scrape_interval}s`],
+      ['Max Query Cost',   hr.max_query_cost?.toLocaleString()],
+      ['Score Min',        hr.dashboard_score_min],
+      ['KB Patterns',      hr.kb_patterns],
+      ['Domain Embeddings',hr.domain_embeddings],
+      ['Planner Agent',    hr.planner_agent],
+    ];
+    document.getElementById('health-grid').innerHTML = healthFields.map(([k, v]) => `
+      <div class="s-stat" style="grid-column:auto">
+        <div class="val" style="font-size:14px;font-weight:600;color:var(--text-hi)">${v ?? '—'}</div>
+        <div class="lbl">${k}</div>
+      </div>
+    `).join('');
+
+    const cacheFields = [
+      ['Backend', cr.backend || '—'],
+      ['Status',  cr.available ? '✓ Connected' : '✗ Unavailable'],
+      ['Hits',    cr.hits ?? '—'],
+      ['Misses',  cr.misses ?? '—'],
+      ['TTL',     cr.ttl_seconds ? `${cr.ttl_seconds}s` : '—'],
+    ];
+    document.getElementById('cache-stats-grid').innerHTML = cacheFields.map(([k, v]) => `
+      <div class="s-stat">
+        <div class="val" style="font-size:14px;font-weight:600;color:var(--accent2)">${v}</div>
+        <div class="lbl">${k}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('health-grid').innerHTML = `<div class="empty" style="color:var(--warn)">Error: ${e.message}</div>`;
+  }
+}
+
+/* ════════════════════════════════════════════
+   BOOT
+════════════════════════════════════════════ */
+checkHealth();
+refreshSidebarCounts();
+setInterval(checkHealth, 15000);
+setInterval(refreshSidebarCounts, 15000);
+</script>
+</body>
+</html>
